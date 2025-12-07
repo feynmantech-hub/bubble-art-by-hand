@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>3D 泡泡 (V17.1 風動氣流版)</title>
+    <title>3D 泡泡 (V17.2 強力風動版)</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -31,9 +31,9 @@
             pointer-events: none;
         }
         #status-main {
-            font-size: 1.8rem;
+            font-size: 2rem;
             font-weight: bold;
-            text-shadow: 0 0 15px rgba(0,255,255,0.8);
+            text-shadow: 0 0 20px rgba(0,255,255,0.9);
             margin-bottom: 5px;
         }
         #status-sub {
@@ -100,12 +100,12 @@
 
     <div id="hud">
         <div id="status-main">等待啟動...</div>
-        <div id="status-sub">✊握拳抽氣 | 👋揮動生風</div>
+        <div id="status-sub">🖐️張開=強力風扇 | 👋揮動=掃風 | 💫畫圓=龍捲風 | ✊握拳=吸回</div>
     </div>
 
     <div id="start-screen">
-        <h1 style="color:white; margin-bottom:10px;">🌪️ 3D 泡泡 V17.1</h1>
-        <p style="color:#aaa; font-size:0.9rem;">風動氣流版</p>
+        <h1 style="color:white; margin-bottom:10px;">🌪️ 3D 泡泡 V17.2</h1>
+        <p style="color:#aaa; font-size:0.9rem;">強力風動版</p>
         <br>
         <button id="btn-start" disabled>正在載入手勢模型...</button>
     </div>
@@ -120,7 +120,7 @@
         window.onload = function() {
             if(window.Hands && window.Camera) {
                 const btn = document.getElementById('btn-start');
-                btn.innerText = "🌪️ 啟動氣流";
+                btn.innerText = "🌪️ 啟動風扇";
                 btn.disabled = false;
             } else {
                 log("AI 載入失敗，請檢查網路");
@@ -138,8 +138,8 @@
         const bubbleCount = 40; 
         
         let handState = 'IDLE'; 
-        let handPos = new THREE.Vector2(0, 0); // Normalized 0~1
-        let handWorldPos = new THREE.Vector3(0, 0, 0); // 3D world pos
+        let handPos = new THREE.Vector2(0, 0); 
+        let handWorldPos = new THREE.Vector3(0, 0, 0); 
         let lastHandPos = new THREE.Vector2(0, 0);
         let handVelocity = new THREE.Vector2(0, 0);
         let gestureText = "等待手勢...";
@@ -192,25 +192,24 @@
 
             for(let i=0; i<bubbleCount; i++) {
                 const b = new THREE.Mesh(geo, mat.clone());
-                // 分散全螢幕
+                // 初始位置
                 b.position.set(
                     (Math.random()-0.5) * viewWidth, 
                     (Math.random()-0.5) * viewHeight, 
                     (Math.random()-0.5) * 10
                 );
                 
-                // 隨機大小
                 const radius = 0.8 + Math.random() * 1.0;
                 b.scale.set(radius, radius, radius);
                 scene.add(b);
 
-                // 【關鍵 4】賦予每顆泡泡獨立物理屬性
+                // 物理屬性
                 bubbles.push({
                     mesh: b, 
                     velocity: new THREE.Vector3(0, 0, 0), 
                     radius: radius,
-                    mass: radius * 1.5, // 大泡泡比較重，慣性大
-                    drag: 0.95 + Math.random() * 0.03 // 每顆泡泡阻力不同
+                    mass: radius * 1.5,
+                    drag: 0.96 + Math.random() * 0.02
                 });
             }
 
@@ -222,7 +221,7 @@
             });
 
             animate();
-            log("3D 場景就緒 (氣流模式)");
+            log("3D 場景就緒 (強力風扇模式)");
         }
 
         function updateViewBounds() {
@@ -259,11 +258,9 @@
             hud.style.color = statusColor;
             hud.style.textShadow = `0 0 20px ${statusColor}`;
 
-            // 計算手在 3D 世界的座標 (投影到 z=0 平面)
-            // 手的座標是 -0.5 ~ 0.5，需要乘上視窗寬高
             handWorldPos.set(handPos.x * viewWidth, -handPos.y * viewHeight, 0);
 
-            // --- 泡泡互斥 (保持距離) ---
+            // 泡泡互斥
             for (let i = 0; i < bubbles.length; i++) {
                 for (let j = i + 1; j < bubbles.length; j++) {
                     const b1 = bubbles[i];
@@ -273,61 +270,66 @@
 
                     if (dist < minDist) {
                         const repulsion = b1.mesh.position.clone().sub(b2.mesh.position).normalize();
-                        const force = (minDist - dist) * 0.1;
+                        const force = (minDist - dist) * 0.15; // 斥力稍微增強
                         b1.velocity.add(repulsion.clone().multiplyScalar(force));
                         b2.velocity.add(repulsion.clone().multiplyScalar(-force));
                     }
                 }
             }
 
-            // --- 物理更新 ---
             bubbles.forEach(b => {
-                
-                // 阻力 (每顆不同)
                 b.velocity.multiplyScalar(b.drag); 
 
-                // ------------------------------------------------
-                // ✊ 握拳抽氣 (Vacuum Effect)
-                // ------------------------------------------------
+                const distToHand = b.mesh.position.distanceTo(handWorldPos);
+
+                // ==========================
+                // 手勢邏輯更新
+                // ==========================
+
+                // ✊ 握拳：強力真空吸引 (Reset/Recall)
                 if (handState === 'FIST') {
-                    // 計算到手的距離
-                    const distToHand = b.mesh.position.distanceTo(handWorldPos);
-                    
-                    // 距離越近，吸力越強 (模擬氣壓差)
-                    const pullStrength = 300 / (distToHand * distToHand + 10); 
-                    
                     const direction = handWorldPos.clone().sub(b.mesh.position).normalize();
-                    // 質量越小，被吸得越快
-                    b.velocity.add(direction.multiplyScalar(pullStrength / b.mass));
+                    // 吸力與距離平方成反比 (越近吸越快)
+                    const pull = 2.0 / (distToHand * 0.5 + 1); 
+                    b.velocity.add(direction.multiplyScalar(pull));
                 }
 
-                // ------------------------------------------------
-                // 👋 揮動生風 (Wind Simulation)
-                // ------------------------------------------------
+                // 🖐️ 張開：三種模式
                 else if (handState === 'OPEN') {
-                    // 如果手正在移動 (有速度)
+                    
+                    // 1. 【強力吹氣】(Fan): 
+                    // 只要張開手，就從手心持續發出斥力
+                    const pushDir = b.mesh.position.clone().sub(handWorldPos).normalize();
+                    // 風力衰減：距離越近風越大
+                    let fanPower = 0;
+                    if (distToHand < 25) { // 有效半徑
+                        fanPower = (1 - distToHand / 25) * 0.8; // 最大推力 0.8 (很強!)
+                    }
+                    b.velocity.add(pushDir.multiplyScalar(fanPower));
+
+                    // 2. 【揮動掃風】(Wave):
+                    // 如果手在動，疊加方向風
                     const handSpeed = handVelocity.length();
                     if (handSpeed > 0.005) {
-                        
-                        // 計算泡泡到手的距離
-                        const distToHand = b.mesh.position.distanceTo(handWorldPos);
-                        
-                        // 風力衰減範圍 (例如 15 單位內都受影響)
-                        if (distToHand < 15) {
-                            // 風力與距離成反比
-                            const windPower = (1 - distToHand / 15); 
-                            
-                            // 將手的速度轉換為風力向量 (X 軸反向，因為鏡像)
-                            const windForce = new THREE.Vector3(handVelocity.x * 300, -handVelocity.y * 300, 0);
-                            
-                            // 質量越小，被風吹得越遠
-                            b.velocity.add(windForce.multiplyScalar(windPower / b.mass));
+                        if (distToHand < 20) {
+                            // 揮手帶動的力量非常大
+                            const waveForce = new THREE.Vector3(handVelocity.x * 400, -handVelocity.y * 400, 0);
+                            b.velocity.add(waveForce.multiplyScalar((1 - distToHand/20) * 0.05));
                         }
                     }
 
-                    // 輕微的隨機擾動 (布朗運動)
-                    b.velocity.x += (Math.random()-0.5) * 0.02;
-                    b.velocity.y += (Math.random()-0.5) * 0.02;
+                    // 3. 【龍捲風】(Tornado):
+                    // 計算角動量
+                    const up = new THREE.Vector3(0, 0, 1);
+                    const tangent = b.mesh.position.clone().cross(up).normalize();
+                    const angularMomentum = (handPos.x * -handVelocity.y) - (handPos.y * handVelocity.x);
+                    
+                    if (Math.abs(angularMomentum) > 0.0001) {
+                         // 旋轉力道加倍
+                         b.velocity.add(tangent.multiplyScalar(angularMomentum * 500));
+                         gestureText = "🌪️ 龍捲風暴";
+                         statusColor = "#a29bfe";
+                    }
                 }
                 
                 // 懸浮
@@ -335,17 +337,16 @@
                     b.velocity.y += Math.sin(Date.now() * 0.001 + b.mesh.id) * 0.002;
                 }
 
-                // 【修改點】放寬速限，讓它能衝刺
-                b.velocity.clampLength(0, 1.5); // 0.3 -> 1.5 (快很多)
+                // 放寬速限，讓強力風扇有感
+                b.velocity.clampLength(0, 2.0); 
 
                 // 應用速度
                 b.mesh.position.add(b.velocity);
                 
-                // --- 邊界反彈 (Wall Bounce) ---
-                // 使用真實視窗邊界
+                // 邊界反彈
                 const halfW = viewWidth / 2 - b.radius;
                 const halfH = viewHeight / 2 - b.radius;
-                const damping = 0.7; // 反彈後損失 30% 能量
+                const damping = 0.8; 
 
                 if (b.mesh.position.x > halfW) { b.mesh.position.x = halfW; b.velocity.x *= -damping; }
                 else if (b.mesh.position.x < -halfW) { b.mesh.position.x = -halfW; b.velocity.x *= -damping; }
@@ -353,12 +354,10 @@
                 if (b.mesh.position.y > halfH) { b.mesh.position.y = halfH; b.velocity.y *= -damping; }
                 else if (b.mesh.position.y < -halfH) { b.mesh.position.y = -halfH; b.velocity.y *= -damping; }
 
-                // Z 軸限制
                 if (b.mesh.position.z > 5) { b.mesh.position.z = 5; b.velocity.z *= -damping; }
                 if (b.mesh.position.z < -10) { b.mesh.position.z = -10; b.velocity.z *= -damping; }
 
-                // 自轉
-                b.mesh.rotation.y += b.velocity.length() * 0.1; // 飛越快轉越快
+                b.mesh.rotation.y += b.velocity.length() * 0.1;
             });
 
             renderer.render(scene, camera);
@@ -377,10 +376,7 @@
         function onResults(results) {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
-                
-                // 座標轉換 (MediaPipe 0~1 -> 3D World -0.5~0.5)
-                // 修正 X 軸鏡像問題：MediaPipe 的 x 是從左到右，但在鏡像畫面中，手的移動方向要反過來
-                const palmX = 1.0 - lm[9].x; // 鏡像翻轉 X
+                const palmX = 1.0 - lm[9].x; 
                 const palmY = lm[9].y;
                 
                 lastHandPos.copy(handPos);
@@ -395,13 +391,17 @@
                 });
 
                 if (extendedFingers <= 1) {
-                    handState = 'FIST'; gestureText = "✊ 真空抽氣"; statusColor = "#ff7675"; 
+                    handState = 'FIST'; gestureText = "✊ 真空吸引"; statusColor = "#ff7675"; 
                 } else {
                     handState = 'OPEN';
                     if (handVelocity.length() > 0.005) {
-                        gestureText = "💨 氣流擾動"; statusColor = "#00cec9"; 
+                        if (Math.abs(handVelocity.x) > Math.abs(handVelocity.y)) {
+                            gestureText = "👋 強風掃過"; statusColor = "#00cec9";
+                        } else {
+                            gestureText = "🌪️ 氣流擾動"; statusColor = "#fdcb6e";
+                        }
                     } else {
-                        gestureText = "🖐️ 懸浮待機"; statusColor = "#74b9ff"; 
+                        gestureText = "💨 強力風扇"; statusColor = "#74b9ff"; 
                     }
                 }
             } else {
