@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>3D 泡泡 (V16.1 優雅控制版)</title>
+    <title>3D 泡泡 (V16.2 極致慢速版)</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -104,8 +104,8 @@
     </div>
 
     <div id="start-screen">
-        <h1 style="color:white; margin-bottom:10px;">👋 3D 泡泡 V16.1</h1>
-        <p style="color:#aaa; font-size:0.9rem;">優雅緩慢控制版</p>
+        <h1 style="color:white; margin-bottom:10px;">👋 3D 泡泡 V16.2</h1>
+        <p style="color:#aaa; font-size:0.9rem;">極致慢速優雅版</p>
         <br>
         <button id="btn-start" disabled>正在載入手勢模型...</button>
     </div>
@@ -178,6 +178,7 @@
             const texture = createOilyTexture();
 
             const geo = new THREE.SphereGeometry(1, 64, 64);
+            // 維持 V15 的高品質材質
             const mat = new THREE.MeshPhysicalMaterial({
                 color: 0x222222, 
                 transmission: 0.99, 
@@ -199,8 +200,8 @@
             for(let i=0; i<bubbleCount; i++) {
                 const b = new THREE.Mesh(geo, mat.clone());
                 b.position.set(
-                    (Math.random()-0.5) * 15, // 稍微縮小初始範圍
-                    (Math.random()-0.5) * 8, 
+                    (Math.random()-0.5) * 12, 
+                    (Math.random()-0.5) * 6, 
                     (Math.random()-0.5) * 5
                 );
                 
@@ -222,7 +223,7 @@
             });
 
             animate();
-            log("3D 場景就緒 (優雅模式)");
+            log("3D 場景就緒 (極致慢速模式)");
         }
 
         function createOilyTexture() {
@@ -244,7 +245,7 @@
             return t;
         }
 
-        // --- 物理動畫迴圈 (參數調整區) ---
+        // --- 物理動畫迴圈 (參數極致微調) ---
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
@@ -256,35 +257,34 @@
 
             bubbles.forEach(b => {
                 
-                // 【修改點 1】增加阻力，讓泡泡停得更快，不會一直滑
-                // 0.98 -> 很滑, 0.90 -> 阻力大
-                b.velocity.multiplyScalar(0.92); 
+                // 【關鍵 1】高阻力：每幀只保留 95% 的速度，讓它很快停下來
+                b.velocity.multiplyScalar(0.95); 
 
                 // ------------------------------------------------
-                // ✊ 握拳集中 (減弱力道)
+                // ✊ 握拳集中 (極微弱引力)
                 // ------------------------------------------------
                 if (handState === 'FIST') {
                     const direction = new THREE.Vector3(0, 0, 0).sub(b.mesh.position);
-                    // 0.8 -> 0.1 (溫柔的引力)
-                    direction.normalize().multiplyScalar(0.15); 
+                    // 0.15 -> 0.02 (幾乎感覺不到的拉力，慢慢飄過去)
+                    direction.normalize().multiplyScalar(0.02); 
                     b.velocity.add(direction);
                 }
 
                 // ------------------------------------------------
-                // 🖐️ 張開分散 (大幅減弱，避免跑太快)
+                // 🖐️ 張開分散 (極微弱推力)
                 // ------------------------------------------------
                 else if (handState === 'OPEN') {
                     const pushDir = b.mesh.position.clone().normalize();
                     if (pushDir.length() === 0) pushDir.set(Math.random()-0.5, Math.random()-0.5, 0).normalize();
                     
-                    // 0.5 -> 0.04 (非常輕微的推力，像微風)
-                    b.velocity.add(pushDir.multiplyScalar(0.04));
+                    // 0.04 -> 0.005 (像呼吸一樣輕)
+                    b.velocity.add(pushDir.multiplyScalar(0.005));
 
                     // ------------------------------------------------
-                    // 👋 揮手移動 (減弱靈敏度)
+                    // 👋 揮手移動 (極大幅度削減)
                     // ------------------------------------------------
-                    // 200 -> 15 (降低手速對泡泡的影響倍率)
-                    const waveSensitivity = 15;
+                    // 15 -> 0.5 (手揮得再快，泡泡也只是懶洋洋地動一下)
+                    const waveSensitivity = 0.5;
                     
                     if (Math.abs(handVelocity.x) > 0.002) {
                         b.velocity.x += handVelocity.x * waveSensitivity; 
@@ -294,37 +294,41 @@
                     }
 
                     // ------------------------------------------------
-                    // 💫 轉圈 (減弱力道)
+                    // 💫 轉圈 (極微弱扭力)
                     // ------------------------------------------------
                     const up = new THREE.Vector3(0, 0, 1);
                     const tangent = b.mesh.position.clone().cross(up).normalize();
                     const angularMomentum = (handPos.x * -handVelocity.y) - (handPos.y * handVelocity.x);
                     
                     if (Math.abs(angularMomentum) > 0.0001) {
-                        // 5000 -> 500 (降低旋轉扭力)
-                         b.velocity.add(tangent.multiplyScalar(angularMomentum * 500));
-                         gestureText = "💫 溫柔旋轉";
+                        // 500 -> 20 (非常慢的旋轉)
+                         b.velocity.add(tangent.multiplyScalar(angularMomentum * 20));
+                         gestureText = "💫 緩慢流動";
                          statusColor = "#a29bfe";
                     }
                 }
                 
-                // 懸浮 (輕微漂浮)
+                // 懸浮 (非常慢的呼吸感)
                 else {
-                    b.velocity.y += Math.sin(Date.now() * 0.002 + b.mesh.id) * 0.001;
+                    b.velocity.y += Math.sin(Date.now() * 0.001 + b.mesh.id) * 0.0005;
                 }
+
+                // 【關鍵 2】強制速限 (Clamp)
+                // 無論如何，速度向量長度不能超過 0.15
+                // 這保證了泡泡永遠不會「噴飛」
+                b.velocity.clampLength(0, 0.15);
 
                 // 應用速度
                 b.mesh.position.add(b.velocity);
                 
-                // 邊界限制 (如果飛太遠，用柔力拉回)
+                // 邊界限制 (溫柔拉回)
                 const dist = b.mesh.position.length();
                 if(dist > 25 && handState !== 'FIST') {
-                    // 0.1 -> 0.02 (拉回的力道也變溫柔)
-                    b.velocity.add(b.mesh.position.clone().normalize().multiplyScalar(-0.02)); 
+                    b.velocity.add(b.mesh.position.clone().normalize().multiplyScalar(-0.01)); 
                 }
 
-                // 自轉
-                b.mesh.rotation.y += 0.01;
+                // 自轉 (非常慢)
+                b.mesh.rotation.y += 0.002;
             });
 
             renderer.render(scene, camera);
@@ -372,21 +376,21 @@
 
                 if (extendedFingers <= 1) {
                     handState = 'FIST';
-                    gestureText = "✊ 溫柔集中";
+                    gestureText = "✊ 緩緩凝聚";
                     statusColor = "#ff7675"; 
                 } else {
                     handState = 'OPEN';
                     const speed = handVelocity.length();
                     if (speed > 0.01) {
                         if (Math.abs(handVelocity.x) > Math.abs(handVelocity.y)) {
-                            gestureText = "👋 輕輕推動";
+                            gestureText = "👋 輕柔撥動";
                             statusColor = "#00cec9"; 
                         } else {
                             gestureText = "✨ 施法中"; 
                             statusColor = "#fdcb6e"; 
                         }
                     } else {
-                        gestureText = "🖐️ 緩緩散開";
+                        gestureText = "🖐️ 慢慢飄散";
                         statusColor = "#74b9ff"; 
                     }
                 }
