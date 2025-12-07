@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>3D 泡泡 (V16.0 手勢魔法版)</title>
+    <title>3D 泡泡 (V16.1 優雅控制版)</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -16,7 +16,6 @@
             overflow: hidden;
             width: 100%;
             height: 100%;
-            /* V15 的深邃背景 */
             background: linear-gradient(180deg, #050510 0%, #1a1a3a 100%) !important;
             font-family: "Microsoft JhengHei", sans-serif;
             color: white;
@@ -105,8 +104,8 @@
     </div>
 
     <div id="start-screen">
-        <h1 style="color:white; margin-bottom:10px;">👋 3D 泡泡 V16.0</h1>
-        <p style="color:#aaa; font-size:0.9rem;">手勢魔法控制版</p>
+        <h1 style="color:white; margin-bottom:10px;">👋 3D 泡泡 V16.1</h1>
+        <p style="color:#aaa; font-size:0.9rem;">優雅緩慢控制版</p>
         <br>
         <button id="btn-start" disabled>正在載入手勢模型...</button>
     </div>
@@ -119,7 +118,6 @@
         function log(msg) { logBox.innerText = `> ${msg}`; }
         window.onerror = (msg) => log("錯誤: " + msg);
         window.onload = function() {
-            // 檢查 Hands 是否載入
             if(window.Hands && window.Camera) {
                 const btn = document.getElementById('btn-start');
                 btn.innerText = "🖐️ 啟動魔法";
@@ -137,28 +135,25 @@
 
         let scene, camera, renderer, controls;
         let bubbles = [];
-        const bubbleCount = 20; // (1) 畫面中出現 20 個泡泡
+        const bubbleCount = 20; 
         
-        // 手勢相關變數
-        let handState = 'IDLE'; // IDLE, FIST, OPEN
+        let handState = 'IDLE'; 
         let handPos = new THREE.Vector2(0, 0);
         let lastHandPos = new THREE.Vector2(0, 0);
         let handVelocity = new THREE.Vector2(0, 0);
         let gestureText = "等待手勢...";
         let statusColor = "white";
 
-        // 啟動按鈕
         document.getElementById('btn-start').addEventListener('click', async () => {
             document.getElementById('start-screen').style.display = 'none';
             initThree();
             startCamera();
         });
 
-        // --- 1. 初始化 3D 場景 (維持 V15 高品質) ---
         function initThree() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 0, 30); // 稍微拉遠一點看整體
+            camera.position.set(0, 0, 30); 
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -169,9 +164,8 @@
 
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
-            controls.enablePan = false; // 禁止平移，專注於手勢
+            controls.enablePan = false; 
 
-            // 環境與光影
             const environment = new RoomEnvironment(renderer);
             const pmremGenerator = new THREE.PMREMGenerator(renderer);
             scene.environment = pmremGenerator.fromScene(environment).texture;
@@ -181,10 +175,8 @@
             scene.add(mainLight);
             scene.add(new THREE.AmbientLight(0xffffff, 0.1));
 
-            // --- 產生油膜紋理 ---
             const texture = createOilyTexture();
 
-            // --- 建立 20 顆泡泡 ---
             const geo = new THREE.SphereGeometry(1, 64, 64);
             const mat = new THREE.MeshPhysicalMaterial({
                 color: 0x222222, 
@@ -206,11 +198,9 @@
 
             for(let i=0; i<bubbleCount; i++) {
                 const b = new THREE.Mesh(geo, mat.clone());
-                
-                // (1) 初始分散，懸浮在空中
                 b.position.set(
-                    (Math.random()-0.5) * 20, 
-                    (Math.random()-0.5) * 10, 
+                    (Math.random()-0.5) * 15, // 稍微縮小初始範圍
+                    (Math.random()-0.5) * 8, 
                     (Math.random()-0.5) * 5
                 );
                 
@@ -220,8 +210,8 @@
 
                 bubbles.push({
                     mesh: b,
-                    velocity: new THREE.Vector3(0, 0, 0), // 初始速度為 0
-                    basePos: b.position.clone() // 記錄初始位置(用於懸浮)
+                    velocity: new THREE.Vector3(0, 0, 0),
+                    basePos: b.position.clone() 
                 });
             }
 
@@ -232,7 +222,7 @@
             });
 
             animate();
-            log("3D 場景就緒，請舉起手");
+            log("3D 場景就緒 (優雅模式)");
         }
 
         function createOilyTexture() {
@@ -254,95 +244,83 @@
             return t;
         }
 
-        // --- 物理動畫迴圈 ---
+        // --- 物理動畫迴圈 (參數調整區) ---
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
 
-            // 更新 UI
             const hud = document.getElementById('status-main');
             hud.innerText = gestureText;
             hud.style.color = statusColor;
             hud.style.textShadow = `0 0 20px ${statusColor}`;
 
-            // --- 泡泡物理邏輯 ---
             bubbles.forEach(b => {
                 
-                // 基礎阻力 (讓泡泡動作像在水裡/空氣中)
-                b.velocity.multiplyScalar(0.95); 
+                // 【修改點 1】增加阻力，讓泡泡停得更快，不會一直滑
+                // 0.98 -> 很滑, 0.90 -> 阻力大
+                b.velocity.multiplyScalar(0.92); 
 
                 // ------------------------------------------------
-                // (2) 偵測到握拳 -> 集中 (Attraction)
+                // ✊ 握拳集中 (減弱力道)
                 // ------------------------------------------------
                 if (handState === 'FIST') {
-                    // 往中心點 (0,0,0) 加速
                     const direction = new THREE.Vector3(0, 0, 0).sub(b.mesh.position);
-                    // 距離越遠拉力越大，但限制最大力
-                    direction.normalize().multiplyScalar(0.8); 
+                    // 0.8 -> 0.1 (溫柔的引力)
+                    direction.normalize().multiplyScalar(0.15); 
                     b.velocity.add(direction);
                 }
 
                 // ------------------------------------------------
-                // (3) 偵測到張開 -> 分散 (Repulsion)
+                // 🖐️ 張開分散 (大幅減弱，避免跑太快)
                 // ------------------------------------------------
                 else if (handState === 'OPEN') {
-                    // 1. 基礎斥力：從中心往外推
                     const pushDir = b.mesh.position.clone().normalize();
-                    // 防止除以零
                     if (pushDir.length() === 0) pushDir.set(Math.random()-0.5, Math.random()-0.5, 0).normalize();
                     
-                    b.velocity.add(pushDir.multiplyScalar(0.5));
+                    // 0.5 -> 0.04 (非常輕微的推力，像微風)
+                    b.velocity.add(pushDir.multiplyScalar(0.04));
 
                     // ------------------------------------------------
-                    // (4) 偵測到左右揮動 (Wave)
+                    // 👋 揮手移動 (減弱靈敏度)
                     // ------------------------------------------------
-                    // 如果手掌張開且有移動，將手的速度加給泡泡
-                    if (Math.abs(handVelocity.x) > 0.005) {
-                        b.velocity.x += handVelocity.x * 200; // 增強手勢推力
-                    }
-                     if (Math.abs(handVelocity.y) > 0.005) {
-                        b.velocity.y -= handVelocity.y * 200; // Y 軸反向
-                    }
-
-                    // ------------------------------------------------
-                    // (5) 偵測到轉圈 (Spin/Vortex)
-                    // ------------------------------------------------
-                    // 這是進階物理：計算角動量
-                    // 如果手的移動路徑形成了"力矩"，就讓泡泡旋轉
+                    // 200 -> 15 (降低手速對泡泡的影響倍率)
+                    const waveSensitivity = 15;
                     
-                    // 簡單模擬：如果手速很快，且不在中心，產生漩渦力
-                    // 計算切線方向 (Cross Product with Up vector)
+                    if (Math.abs(handVelocity.x) > 0.002) {
+                        b.velocity.x += handVelocity.x * waveSensitivity; 
+                    }
+                     if (Math.abs(handVelocity.y) > 0.002) {
+                        b.velocity.y -= handVelocity.y * waveSensitivity; 
+                    }
+
+                    // ------------------------------------------------
+                    // 💫 轉圈 (減弱力道)
+                    // ------------------------------------------------
                     const up = new THREE.Vector3(0, 0, 1);
                     const tangent = b.mesh.position.clone().cross(up).normalize();
-                    
-                    // 偵測手是否在畫圓 (簡化：檢測手速與位置的關係)
-                    // 這裡我們用一個簡單的邏輯：如果手正在移動，且我們處於 OPEN 狀態
-                    // 我們加入一點旋轉分量，根據手的 X 移動方向決定順時針或逆時針
-                    // 更精確的做法：計算 (HandPos X HandVel) 的 Z 分量
                     const angularMomentum = (handPos.x * -handVelocity.y) - (handPos.y * handVelocity.x);
                     
                     if (Math.abs(angularMomentum) > 0.0001) {
-                         b.velocity.add(tangent.multiplyScalar(angularMomentum * 5000));
-                         gestureText = "💫 旋風轉動！";
+                        // 5000 -> 500 (降低旋轉扭力)
+                         b.velocity.add(tangent.multiplyScalar(angularMomentum * 500));
+                         gestureText = "💫 溫柔旋轉";
                          statusColor = "#a29bfe";
                     }
                 }
                 
-                // (1) 懸浮：如果沒有手勢，輕微上下漂浮
+                // 懸浮 (輕微漂浮)
                 else {
-                    b.velocity.y += Math.sin(Date.now() * 0.002 + b.mesh.id) * 0.002;
-                    // 輕微回歸原始位置，避免飄太遠
-                    // const returnForce = b.basePos.clone().sub(b.mesh.position).multiplyScalar(0.01);
-                    // b.velocity.add(returnForce);
+                    b.velocity.y += Math.sin(Date.now() * 0.002 + b.mesh.id) * 0.001;
                 }
 
                 // 應用速度
                 b.mesh.position.add(b.velocity);
                 
-                // 邊界限制 (避免飛出螢幕太遠)
-                if(b.mesh.position.length() > 30 && handState !== 'FIST') {
-                    b.velocity.multiplyScalar(0.9); // 減速
-                    b.velocity.add(b.mesh.position.clone().normalize().multiplyScalar(-0.1)); // 拉回
+                // 邊界限制 (如果飛太遠，用柔力拉回)
+                const dist = b.mesh.position.length();
+                if(dist > 25 && handState !== 'FIST') {
+                    // 0.1 -> 0.02 (拉回的力道也變溫柔)
+                    b.velocity.add(b.mesh.position.clone().normalize().multiplyScalar(-0.02)); 
                 }
 
                 // 自轉
@@ -352,13 +330,9 @@
             renderer.render(scene, camera);
         }
 
-        // --- 手勢辨識與 AI ---
         async function startCamera() {
             const video = document.querySelector('.input_video');
-
-            const hands = new window.Hands({locateFile: (file) => {
-                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-            }});
+            const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
 
             hands.setOptions({
                 maxNumHands: 1,
@@ -368,13 +342,9 @@
             });
 
             hands.onResults(onResults);
-
             const camera = new window.Camera(video, {
-                onFrame: async () => {
-                    await hands.send({image: video});
-                },
-                width: 640,
-                height: 480
+                onFrame: async () => await hands.send({image: video}),
+                width: 640, height: 480
             });
             await camera.start();
             log("手勢追蹤已啟動");
@@ -383,62 +353,43 @@
         function onResults(results) {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
-                
-                // 1. 計算手掌中心 (約略用中指根部 9 和 手腕 0 的中間)
                 const palmX = lm[9].x;
                 const palmY = lm[9].y;
                 
-                // 更新手的位置與速度
                 lastHandPos.copy(handPos);
-                handPos.set(palmX - 0.5, palmY - 0.5); // 中心化 (-0.5 ~ 0.5)
-                handVelocity.subVectors(handPos, lastHandPos); // 計算速度向量
+                handPos.set(palmX - 0.5, palmY - 0.5); 
+                handVelocity.subVectors(handPos, lastHandPos); 
 
-                // 2. 判斷手指彎曲 (簡單演算法：指尖是否低於指關節)
-                // 拇指(4), 食指(8), 中指(12), 無名指(16), 小指(20)
-                // 比較 指尖(TIP) 與 第二關節(PIP) 的距離
-                // 為了簡化：計算指尖到手腕(0)的距離，如果很短就是握拳
-                
                 let extendedFingers = 0;
                 const wrist = lm[0];
-                
-                // 檢查食指、中指、無名指、小指
                 [8, 12, 16, 20].forEach(tipIdx => {
                     const tip = lm[tipIdx];
-                    const pip = lm[tipIdx - 2]; // 該手指的第二關節
-                    // 計算距離手腕的距離
+                    const pip = lm[tipIdx - 2]; 
                     const distTip = Math.hypot(tip.x - wrist.x, tip.y - wrist.y);
                     const distPip = Math.hypot(pip.x - wrist.x, pip.y - wrist.y);
-                    
-                    // 如果指尖比關節遠，視為伸直
                     if (distTip > distPip) extendedFingers++;
                 });
 
-                // 3. 狀態機判定
                 if (extendedFingers <= 1) {
                     handState = 'FIST';
-                    gestureText = "✊ 聚氣集中";
-                    statusColor = "#ff7675"; // 紅色
+                    gestureText = "✊ 溫柔集中";
+                    statusColor = "#ff7675"; 
                 } else {
                     handState = 'OPEN';
-                    
-                    // 細分 OPEN 下的動作
                     const speed = handVelocity.length();
-                    
                     if (speed > 0.01) {
-                        // 如果在移動
                         if (Math.abs(handVelocity.x) > Math.abs(handVelocity.y)) {
-                            gestureText = "👋 揮動氣流";
-                            statusColor = "#00cec9"; // 青色
+                            gestureText = "👋 輕輕推動";
+                            statusColor = "#00cec9"; 
                         } else {
-                            gestureText = "✨ 施法中"; // 上下動或轉圈
-                            statusColor = "#fdcb6e"; // 黃色
+                            gestureText = "✨ 施法中"; 
+                            statusColor = "#fdcb6e"; 
                         }
                     } else {
-                        gestureText = "🖐️ 能量發散";
-                        statusColor = "#74b9ff"; // 藍色
+                        gestureText = "🖐️ 緩緩散開";
+                        statusColor = "#74b9ff"; 
                     }
                 }
-
             } else {
                 handState = 'IDLE';
                 gestureText = "等待手勢...";
