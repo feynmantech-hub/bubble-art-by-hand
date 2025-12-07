@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>3D 泡泡 (V16.2 極致慢速版)</title>
+    <title>3D 泡泡 (V17.0 終極互動版)</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -104,8 +104,8 @@
     </div>
 
     <div id="start-screen">
-        <h1 style="color:white; margin-bottom:10px;">👋 3D 泡泡 V16.2</h1>
-        <p style="color:#aaa; font-size:0.9rem;">極致慢速優雅版</p>
+        <h1 style="color:white; margin-bottom:10px;">👋 3D 泡泡 V17.0</h1>
+        <p style="color:#aaa; font-size:0.9rem;">終極互動升級版</p>
         <br>
         <button id="btn-start" disabled>正在載入手勢模型...</button>
     </div>
@@ -135,7 +135,8 @@
 
         let scene, camera, renderer, controls;
         let bubbles = [];
-        const bubbleCount = 20; 
+        // 【修改點 2】增加到 40 個泡泡
+        const bubbleCount = 40; 
         
         let handState = 'IDLE'; 
         let handPos = new THREE.Vector2(0, 0);
@@ -143,6 +144,9 @@
         let handVelocity = new THREE.Vector2(0, 0);
         let gestureText = "等待手勢...";
         let statusColor = "white";
+
+        // 計算邊界用的變數
+        let viewWidth, viewHeight;
 
         document.getElementById('btn-start').addEventListener('click', async () => {
             document.getElementById('start-screen').style.display = 'none';
@@ -166,6 +170,9 @@
             controls.enableDamping = true;
             controls.enablePan = false; 
 
+            // 計算可視邊界
+            updateViewBounds();
+
             const environment = new RoomEnvironment(renderer);
             const pmremGenerator = new THREE.PMREMGenerator(renderer);
             scene.environment = pmremGenerator.fromScene(environment).texture;
@@ -178,41 +185,26 @@
             const texture = createOilyTexture();
 
             const geo = new THREE.SphereGeometry(1, 64, 64);
-            // 維持 V15 的高品質材質
             const mat = new THREE.MeshPhysicalMaterial({
-                color: 0x222222, 
-                transmission: 0.99, 
-                opacity: 1, 
-                transparent: true, 
-                metalness: 0,
-                roughness: 0, 
-                ior: 1.4,
-                thickness: 0.2,
-                iridescence: 1, 
-                iridescenceIOR: 1.33,
-                iridescenceThicknessRange: [300, 900], 
-                iridescenceThicknessMap: texture,
-                clearcoat: 1,
-                envMapIntensity: 5.0, 
-                side: THREE.DoubleSide
+                color: 0x222222, transmission: 0.99, opacity: 1, transparent: true, 
+                metalness: 0, roughness: 0, ior: 1.4, thickness: 0.2,
+                iridescence: 1, iridescenceIOR: 1.33, iridescenceThicknessRange: [300, 900], 
+                iridescenceThicknessMap: texture, clearcoat: 1, envMapIntensity: 5.0, side: THREE.DoubleSide
             });
 
             for(let i=0; i<bubbleCount; i++) {
                 const b = new THREE.Mesh(geo, mat.clone());
+                // 初始位置分散一點
                 b.position.set(
-                    (Math.random()-0.5) * 12, 
-                    (Math.random()-0.5) * 6, 
+                    (Math.random()-0.5) * viewWidth * 0.8, 
+                    (Math.random()-0.5) * viewHeight * 0.8, 
                     (Math.random()-0.5) * 5
                 );
-                
-                const s = 1 + Math.random();
+                const s = 1 + Math.random() * 0.5;
                 b.scale.set(s,s,s);
                 scene.add(b);
-
                 bubbles.push({
-                    mesh: b,
-                    velocity: new THREE.Vector3(0, 0, 0),
-                    basePos: b.position.clone() 
+                    mesh: b, velocity: new THREE.Vector3(0, 0, 0), radius: s
                 });
             }
 
@@ -220,10 +212,18 @@
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
                 renderer.setSize(window.innerWidth, window.innerHeight);
+                updateViewBounds();
             });
 
             animate();
-            log("3D 場景就緒 (極致慢速模式)");
+            log("3D 場景就緒 (終極互動模式)");
+        }
+
+        // 計算攝影機在 z=0 平面的可視寬高
+        function updateViewBounds() {
+            const vFOV = THREE.MathUtils.degToRad(camera.fov); // 垂直視角轉弧度
+            viewHeight = 2 * Math.tan(vFOV / 2) * camera.position.z;
+            viewWidth = viewHeight * camera.aspect;
         }
 
         function createOilyTexture() {
@@ -245,7 +245,6 @@
             return t;
         }
 
-        // --- 物理動畫迴圈 (參數極致微調) ---
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
@@ -255,80 +254,94 @@
             hud.style.color = statusColor;
             hud.style.textShadow = `0 0 20px ${statusColor}`;
 
-            bubbles.forEach(b => {
-                
-                // 【關鍵 1】高阻力：每幀只保留 95% 的速度，讓它很快停下來
-                b.velocity.multiplyScalar(0.95); 
+            // --- 【修改點 1】泡泡互斥 (避免沾黏) ---
+            for (let i = 0; i < bubbles.length; i++) {
+                for (let j = i + 1; j < bubbles.length; j++) {
+                    const b1 = bubbles[i];
+                    const b2 = bubbles[j];
+                    const dist = b1.mesh.position.distanceTo(b2.mesh.position);
+                    const minDist = b1.radius + b2.radius + 0.5; // 安全距離
 
-                // ------------------------------------------------
-                // ✊ 握拳集中 (極微弱引力)
-                // ------------------------------------------------
+                    if (dist < minDist) {
+                        const repulsion = b1.mesh.position.clone().sub(b2.mesh.position).normalize();
+                        const force = (minDist - dist) * 0.05; // 距離越近推力越大
+                        b1.velocity.add(repulsion.clone().multiplyScalar(force));
+                        b2.velocity.add(repulsion.clone().multiplyScalar(-force));
+                    }
+                }
+            }
+
+            bubbles.forEach(b => {
+                // 阻力
+                b.velocity.multiplyScalar(0.96); 
+
+                // ✊ 握拳集中
                 if (handState === 'FIST') {
                     const direction = new THREE.Vector3(0, 0, 0).sub(b.mesh.position);
-                    // 0.15 -> 0.02 (幾乎感覺不到的拉力，慢慢飄過去)
-                    direction.normalize().multiplyScalar(0.02); 
+                    direction.normalize().multiplyScalar(0.08); 
                     b.velocity.add(direction);
                 }
-
-                // ------------------------------------------------
-                // 🖐️ 張開分散 (極微弱推力)
-                // ------------------------------------------------
+                // 🖐️ 張開分散 & 手勢控制
                 else if (handState === 'OPEN') {
+                    // 基礎分散力
                     const pushDir = b.mesh.position.clone().normalize();
                     if (pushDir.length() === 0) pushDir.set(Math.random()-0.5, Math.random()-0.5, 0).normalize();
-                    
-                    // 0.04 -> 0.005 (像呼吸一樣輕)
-                    b.velocity.add(pushDir.multiplyScalar(0.005));
+                    b.velocity.add(pushDir.multiplyScalar(0.01));
 
-                    // ------------------------------------------------
-                    // 👋 揮手移動 (極大幅度削減)
-                    // ------------------------------------------------
-                    // 15 -> 0.5 (手揮得再快，泡泡也只是懶洋洋地動一下)
-                    const waveSensitivity = 0.5;
-                    
-                    if (Math.abs(handVelocity.x) > 0.002) {
-                        b.velocity.x += handVelocity.x * waveSensitivity; 
-                    }
-                     if (Math.abs(handVelocity.y) > 0.002) {
-                        b.velocity.y -= handVelocity.y * waveSensitivity; 
-                    }
+                    // 【修改點 3】👋 揮手靈敏度大幅提升 (0.5 -> 3.0)
+                    const waveSensitivity = 3.0;
+                    if (Math.abs(handVelocity.x) > 0.002) b.velocity.x += handVelocity.x * waveSensitivity; 
+                    if (Math.abs(handVelocity.y) > 0.002) b.velocity.y -= handVelocity.y * waveSensitivity; 
 
-                    // ------------------------------------------------
-                    // 💫 轉圈 (極微弱扭力)
-                    // ------------------------------------------------
+                    // 【修改點 4】💫 轉圈靈敏度大幅提升 (20 -> 300)
                     const up = new THREE.Vector3(0, 0, 1);
                     const tangent = b.mesh.position.clone().cross(up).normalize();
                     const angularMomentum = (handPos.x * -handVelocity.y) - (handPos.y * handVelocity.x);
-                    
                     if (Math.abs(angularMomentum) > 0.0001) {
-                        // 500 -> 20 (非常慢的旋轉)
-                         b.velocity.add(tangent.multiplyScalar(angularMomentum * 20));
-                         gestureText = "💫 緩慢流動";
+                         b.velocity.add(tangent.multiplyScalar(angularMomentum * 300));
+                         gestureText = "💫 強力旋風";
                          statusColor = "#a29bfe";
                     }
                 }
-                
-                // 懸浮 (非常慢的呼吸感)
+                // 懸浮
                 else {
                     b.velocity.y += Math.sin(Date.now() * 0.001 + b.mesh.id) * 0.0005;
                 }
 
-                // 【關鍵 2】強制速限 (Clamp)
-                // 無論如何，速度向量長度不能超過 0.15
-                // 這保證了泡泡永遠不會「噴飛」
-                b.velocity.clampLength(0, 0.15);
+                // 速限
+                b.velocity.clampLength(0, 0.3);
 
                 // 應用速度
                 b.mesh.position.add(b.velocity);
                 
-                // 邊界限制 (溫柔拉回)
-                const dist = b.mesh.position.length();
-                if(dist > 25 && handState !== 'FIST') {
-                    b.velocity.add(b.mesh.position.clone().normalize().multiplyScalar(-0.01)); 
+                // --- 【修改點 5】邊界反彈 (Bounce) ---
+                const halfW = viewWidth / 2 - b.radius;
+                const halfH = viewHeight / 2 - b.radius;
+                
+                // X 軸撞牆
+                if (b.mesh.position.x > halfW) {
+                    b.mesh.position.x = halfW;
+                    b.velocity.x *= -0.8; // 反彈並損失一點能量
+                } else if (b.mesh.position.x < -halfW) {
+                    b.mesh.position.x = -halfW;
+                    b.velocity.x *= -0.8;
                 }
 
-                // 自轉 (非常慢)
-                b.mesh.rotation.y += 0.002;
+                // Y 軸撞牆
+                if (b.mesh.position.y > halfH) {
+                    b.mesh.position.y = halfH;
+                    b.velocity.y *= -0.8;
+                } else if (b.mesh.position.y < -halfH) {
+                    b.mesh.position.y = -halfH;
+                    b.velocity.y *= -0.8;
+                }
+
+                // Z 軸簡單限制
+                if (b.mesh.position.z > 5) { b.mesh.position.z = 5; b.velocity.z *= -0.8; }
+                if (b.mesh.position.z < -5) { b.mesh.position.z = -5; b.velocity.z *= -0.8; }
+
+                // 自轉
+                b.mesh.rotation.y += 0.005;
             });
 
             renderer.render(scene, camera);
@@ -337,14 +350,12 @@
         async function startCamera() {
             const video = document.querySelector('.input_video');
             const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-
             hands.setOptions({
                 maxNumHands: 1,
                 modelComplexity: 1,
                 minDetectionConfidence: 0.5,
                 minTrackingConfidence: 0.5
             });
-
             hands.onResults(onResults);
             const camera = new window.Camera(video, {
                 onFrame: async () => await hands.send({image: video}),
@@ -357,9 +368,7 @@
         function onResults(results) {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
-                const palmX = lm[9].x;
-                const palmY = lm[9].y;
-                
+                const palmX = lm[9].x; const palmY = lm[9].y;
                 lastHandPos.copy(handPos);
                 handPos.set(palmX - 0.5, palmY - 0.5); 
                 handVelocity.subVectors(handPos, lastHandPos); 
@@ -367,38 +376,26 @@
                 let extendedFingers = 0;
                 const wrist = lm[0];
                 [8, 12, 16, 20].forEach(tipIdx => {
-                    const tip = lm[tipIdx];
-                    const pip = lm[tipIdx - 2]; 
-                    const distTip = Math.hypot(tip.x - wrist.x, tip.y - wrist.y);
-                    const distPip = Math.hypot(pip.x - wrist.x, pip.y - wrist.y);
-                    if (distTip > distPip) extendedFingers++;
+                    const tip = lm[tipIdx]; const pip = lm[tipIdx - 2]; 
+                    if (Math.hypot(tip.x - wrist.x, tip.y - wrist.y) > Math.hypot(pip.x - wrist.x, pip.y - wrist.y)) extendedFingers++;
                 });
 
                 if (extendedFingers <= 1) {
-                    handState = 'FIST';
-                    gestureText = "✊ 緩緩凝聚";
-                    statusColor = "#ff7675"; 
+                    handState = 'FIST'; gestureText = "✊ 強力集中"; statusColor = "#ff7675"; 
                 } else {
                     handState = 'OPEN';
-                    const speed = handVelocity.length();
-                    if (speed > 0.01) {
+                    if (handVelocity.length() > 0.01) {
                         if (Math.abs(handVelocity.x) > Math.abs(handVelocity.y)) {
-                            gestureText = "👋 輕柔撥動";
-                            statusColor = "#00cec9"; 
+                            gestureText = "👋 靈敏撥動"; statusColor = "#00cec9"; 
                         } else {
-                            gestureText = "✨ 施法中"; 
-                            statusColor = "#fdcb6e"; 
+                            gestureText = "✨ 施法中"; statusColor = "#fdcb6e"; 
                         }
                     } else {
-                        gestureText = "🖐️ 慢慢飄散";
-                        statusColor = "#74b9ff"; 
+                        gestureText = "🖐️ 自然發散"; statusColor = "#74b9ff"; 
                     }
                 }
             } else {
-                handState = 'IDLE';
-                gestureText = "等待手勢...";
-                statusColor = "white";
-                handVelocity.set(0, 0);
+                handState = 'IDLE'; gestureText = "等待手勢..."; statusColor = "white"; handVelocity.set(0, 0);
             }
         }
     </script>
